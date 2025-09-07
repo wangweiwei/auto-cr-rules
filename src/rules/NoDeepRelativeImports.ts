@@ -1,5 +1,5 @@
 import BabelCore from '@babel/core'
-import type { CallExpression, ImportDeclaration } from '@babel/types'
+import type { CallExpression, ExportAllDeclaration, ExportNamedDeclaration, ImportDeclaration } from '@babel/types'
 import type { NodePath } from '@babel/traverse'
 import { PluginOptions } from '../types'
 
@@ -12,7 +12,7 @@ import { PluginOptions } from '../types'
  */
 function checkRelativePath(
   sourceValue: string,
-  path: NodePath<ImportDeclaration> | NodePath<CallExpression>,
+  path: NodePath<ImportDeclaration> | NodePath<CallExpression> | NodePath<ExportNamedDeclaration> | NodePath<ExportAllDeclaration>,
   maxDepth: number,
   report: PluginOptions['report']
 ): void {
@@ -22,9 +22,9 @@ function checkRelativePath(
     const depth = (sourceValue.match(/\.\.\//g) || []).length
 
     if (depth > maxDepth) {
-      report<ImportDeclaration | CallExpression>(
+      report<ImportDeclaration | CallExpression | ExportNamedDeclaration | ExportAllDeclaration>(
         path,
-        `导入路径 "${sourceValue}" 不能超过最大层级${maxDepth}`
+        `导入/导出路径 "${sourceValue}" 不能超过最大层级（${maxDepth}：层）`
       )
     }
   }
@@ -72,6 +72,22 @@ export default function (api: typeof BabelCore, options: PluginOptions) {
           }
         }
       },
+      // 处理命名导出（export { ... } from 'module'）
+      ExportNamedDeclaration(path: NodePath<ExportNamedDeclaration>) {
+        if (path.node.source) {
+          const sourceValue = path.node.source.value
+          if (typeof sourceValue === 'string') {
+            checkRelativePath(sourceValue, path, maxDepth, report)
+          }
+        }
+      },
+      // 处理全部导出（export * from 'module'）
+      ExportAllDeclaration(path: NodePath<ExportAllDeclaration>) {
+        const sourceValue = path.node.source.value
+        if (typeof sourceValue === 'string') {
+          checkRelativePath(sourceValue, path, maxDepth, report)
+        }
+      }
     },
   }
 }
